@@ -3,6 +3,11 @@ import requests
 import pandas as pd
 import os
 
+# ---------------------------------------------------------
+# 1. CONFIGURACIÓN
+# ---------------------------------------------------------
+st.set_page_config(page_title="Fenix Pedidos", page_icon="🔥", layout="centered")
+
 
 # =========================================================
 # 🟢 INICIO DE LA APLICACIÓN (SOLO SI LOGUEADO)
@@ -359,7 +364,7 @@ with st.expander("👤 Datos del Cliente", expanded=False):
     
     with col_c:
         # He puesto "Sin Domicilio" etc, pero puedes cambiarlo a ["Domiciliario1", "Domiciliario2"] si prefieres
-        domiciliario = st.selectbox("Domiciliario", ["Domiciliario1", "Domiciliario2"])
+        domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
     with col_d:
         barrio = st.text_input("Barrio")
     with col_e:
@@ -563,6 +568,15 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             
             # Limpiar carrito
             st.session_state.carrito = pd.DataFrame(columns=["Producto","Precio","Cantidad","Total"])
+            
+            # --- NUEVO: Limpiar formulario (Datafono, Medio Pago, Domicilio) ---
+            if "medio_pago_input" in st.session_state:
+                del st.session_state["medio_pago_input"] # Vuelve a "Efectivo"
+            if "datafono_valor" in st.session_state:
+                del st.session_state["datafono_valor"]
+            if "val_domi_input" in st.session_state:
+                del st.session_state["val_domi_input"]
+            
             st.rerun()
         else:
             st.error("❌ Error al enviar")
