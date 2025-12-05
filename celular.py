@@ -3,36 +3,6 @@ import requests
 import pandas as pd
 import os
 
-# ---------------------------------------------------------
-# 1. CONFIGURACIÓN
-# ---------------------------------------------------------
-st.set_page_config(page_title="Fenix Pedidos", page_icon="🔥", layout="centered")
-
-# =========================================================
-# 🔐 SISTEMA DE LOGIN DE SEGURIDAD
-# =========================================================
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    # Diseño centrado para el login
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center;'>🔒 Acceso Restringido</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Sistema Fenix Pedidos</p>", unsafe_allow_html=True)
-    
-    col_log1, col_log2, col_log3 = st.columns([1, 2, 1])
-    with col_log2:
-        codigo_ingreso = st.text_input("Ingrese Código:", type="password", placeholder="****", label_visibility="collapsed")
-        
-        if st.button("INGRESAR", type="primary", use_container_width=True):
-            if codigo_ingreso == "1408":
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("❌ Código incorrecto")
-    
-    # Detener la ejecución del resto de la app si no está logueado
-    st.stop()
 
 # =========================================================
 # 🟢 INICIO DE LA APLICACIÓN (SOLO SI LOGUEADO)
@@ -384,12 +354,17 @@ with st.expander("👤 Datos del Cliente", expanded=False):
     with col_b:
         celular = st.text_input("Celular")
     
-    domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
-    col_c, col_d = st.columns(2)
+    # --- CORRECCIÓN: Creamos 3 columnas para que queden alineados horizontalmente ---
+    col_c, col_d, col_e = st.columns(3)
+    
     with col_c:
-        barrio = st.text_input("Barrio")
+        # He puesto "Sin Domicilio" etc, pero puedes cambiarlo a ["Domiciliario1", "Domiciliario2"] si prefieres
+        domiciliario = st.selectbox("Domiciliario", ["Domiciliario1", "Domiciliario2"])
     with col_d:
+        barrio = st.text_input("Barrio")
+    with col_e:
         direccion = st.text_input("Dirección")
+        
     ubicacion = st.text_input("Ubicación")
     observaciones = st.text_area("Observaciones", height=68)
 
@@ -458,30 +433,57 @@ if add_btn and prod_sel != "Seleccionar...":
 # ---------------------------------------------------------
 st.write("Resumen:")
 
-edited_df = st.data_editor(
-    st.session_state.carrito,
-    num_rows="dynamic",
-    column_config={
-        "Producto": st.column_config.TextColumn("Producto", required=True),
-        "Precio": st.column_config.NumberColumn("Precio", min_value=0, format="$%d"),
-        "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=1),
-        "Total": st.column_config.NumberColumn("Total", disabled=True, format="$%d"),
-    },
-    key="editor_carrito"
-)
+# --- ENCABEZADOS ---
+col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([3, 1.5, 1.5, 1.5, 0.5])
+col_h1.markdown("**Producto**")
+col_h2.markdown("**Precio**")
+col_h3.markdown("**Cant.**")
+col_h4.markdown("**Total**")
+col_h5.markdown("")
 
-# Limpieza
-clean_df = edited_df.copy()
-clean_df["Producto"] = clean_df["Producto"].astype(str)
-clean_df = clean_df[clean_df["Producto"].str.strip() != ""]
-clean_df = clean_df[clean_df["Producto"].str.lower() != "nan"]
+# Variable para controlar qué borrar
+idx_borrar = None
 
-for col in ["Precio", "Cantidad"]:
-    clean_df[col] = clean_df[col].astype(str).str.replace("$", "", regex=False).str.replace(",", "", regex=False)
-    clean_df[col] = pd.to_numeric(clean_df[col], errors='coerce').fillna(0).astype(int)
+# --- FILAS DEL CARRITO ---
+for i, row in st.session_state.carrito.iterrows():
+    c1, c2, c3, c4, c5 = st.columns([3, 1.5, 1.5, 1.5, 0.5])
+    
+    # 1. Nombre
+    c1.write(row["Producto"])
+    
+    # 2. Precio
+    c2.write(f"${row['Precio']:,.0f}")
+    
+    # 3. Cantidad (Editable)
+    nueva_cant = c3.number_input(
+        "Cant", 
+        min_value=1, 
+        value=int(row["Cantidad"]), 
+        key=f"qty_{i}", 
+        label_visibility="collapsed"
+    )
+    
+    # Actualizar estado si cambia la cantidad
+    if nueva_cant != row["Cantidad"]:
+        st.session_state.carrito.at[i, "Cantidad"] = nueva_cant
+        st.session_state.carrito.at[i, "Total"] = nueva_cant * row["Precio"]
+        st.rerun()
 
-clean_df["Total"] = clean_df["Precio"] * clean_df["Cantidad"]
-st.session_state.carrito = clean_df
+    # 4. Total Fila
+    total_fila = nueva_cant * row["Precio"]
+    c4.write(f"${total_fila:,.0f}")
+    
+    # 5. Botón BORRAR (Icono)
+    if c5.button("🗑️", key=f"del_{i}", help="Eliminar"):
+        idx_borrar = i
+
+# --- LÓGICA DE BORRADO ---
+if idx_borrar is not None:
+    st.session_state.carrito = st.session_state.carrito.drop(idx_borrar).reset_index(drop=True)
+    st.rerun()
+
+# Definir clean_df para compatibilidad con el resto del código
+clean_df = st.session_state.carrito.copy()
 
 # Totales
 st.divider()
@@ -565,5 +567,6 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
         else:
             st.error("❌ Error al enviar")
             st.write(res)
+
 
 
