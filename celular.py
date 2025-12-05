@@ -8,6 +8,36 @@ import os
 # ---------------------------------------------------------
 st.set_page_config(page_title="Fenix Pedidos", page_icon="🔥", layout="centered")
 
+# =========================================================
+# 🔐 SISTEMA DE LOGIN DE SEGURIDAD
+# =========================================================
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    # Diseño centrado para el login
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔒 Acceso Restringido</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Sistema Fenix Pedidos</p>", unsafe_allow_html=True)
+    
+    col_log1, col_log2, col_log3 = st.columns([1, 2, 1])
+    with col_log2:
+        codigo_ingreso = st.text_input("Ingrese Código:", type="password", placeholder="****", label_visibility="collapsed")
+        
+        if st.button("INGRESAR", type="primary", use_container_width=True):
+            if codigo_ingreso == "1408":
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("❌ Código incorrecto")
+    
+    # Detener la ejecución del resto de la app si no está logueado
+    st.stop()
+
+# =========================================================
+# 🟢 INICIO DE LA APLICACIÓN (SOLO SI LOGUEADO)
+# =========================================================
+
 # ⚠️ TU URL DE GOOGLE APPS SCRIPT
 URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz1oGSzV-WZ7MIN5YbdJUsBrZRUv9l80Jl1kqAbheNDlw/exec"
 
@@ -15,7 +45,7 @@ URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz
 ARCHIVO_DB = "productos_db.csv"
 ARCHIVO_CONSECUTIVO = "consecutivo.txt"
 
-# 🔒 CONTRASEÑA DE ADMINISTRADOR
+# 🔒 CONTRASEÑA DE ADMINISTRADOR (Para editar productos)
 PASSWORD_ADMIN = "1234"  
 
 # ---------------------------------------------------------
@@ -379,11 +409,27 @@ col1, col2, col3 = st.columns([3,1,1])
 with col1:
     lista_ordenada = sorted(list(PRODUCTOS_DISPONIBLES.keys()))
     opc = ["Seleccionar..."] + lista_ordenada
-    prod_sel = st.selectbox("Producto", opc, label_visibility="collapsed")
+    
+    # --- FUNCIÓN NUEVA: Formatear lista desplegable ---
+    def formato_opcion(opcion):
+        if opcion == "Seleccionar...":
+            return opcion
+        try:
+            p = float(PRODUCTOS_DISPONIBLES.get(opcion, 0))
+            return f"{opcion} (${p:,.0f})"
+        except:
+            return opcion
+
+    prod_sel = st.selectbox("Producto", opc, format_func=formato_opcion, label_visibility="collapsed")
+
 with col2:
     cant_sel = st.number_input("Cant.", min_value=1, value=1, label_visibility="collapsed")
 with col3:
     add_btn = st.button("➕", type="primary", use_container_width=True)
+
+# --- INFO VISUAL DE PRECIO SELECCIONADO ---
+if prod_sel != "Seleccionar...":
+    st.info(f"💰 Precio Unitario: **${PRODUCTOS_DISPONIBLES.get(prod_sel, 0):,.0f}**")
 
 if add_btn and prod_sel != "Seleccionar...":
     precio = int(PRODUCTOS_DISPONIBLES[prod_sel])
@@ -519,5 +565,5 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
         else:
             st.error("❌ Error al enviar")
             st.write(res)
-       
+
 
