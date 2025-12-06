@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
+import time  # <--- Necesario para la pausa de las bombitas
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
@@ -12,21 +13,17 @@ from streamlit_js_eval import get_geolocation
 st.set_page_config(page_title="Ibaguiar Pedidos", page_icon="🔥", layout="centered")
 
 # =========================================================
-# ⚙️ VARIABLES Y CONFIGURACIÓN
+# ⚙️ VARIABLES
 # =========================================================
-
-# TU UBICACIÓN (Ibagué)
 UBICACION_BASE = (4.4440508, -75.208976)
-
 URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz1oGSzV-WZ7MIN5YbdJUsBrZRUv9l80Jl1kqAbheNDlw/exec"
 ARCHIVO_DB = "productos_db.csv"
 ARCHIVO_CONSECUTIVO = "consecutivo.txt"
 PASSWORD_ADMIN = "1234"
 
 # ---------------------------------------------------------
-# 2. LISTA MAESTRA (GLOBAL)
+# 2. LISTA MAESTRA DE PRECIOS
 # ---------------------------------------------------------
-# La definimos aquí afuera para evitar errores de indentación
 PRODUCTOS_INICIALES_DICT = {
     # --- Aguardientes ---
     "Aguardiente Garrafa tapa roja": [98000, 20],
@@ -45,33 +42,110 @@ PRODUCTOS_INICIALES_DICT = {
     "Ron Botella Viejo de Caldas": [65000, 20],
     "Ron Viejo de Caldas media": [35000, 20],
     # --- Cervezas ---
-    "Cerveza Six Heineken": [21000, 20],
+    "Cerveza Six Heineken": [22000, 20],
     "Cerveza Six Corona 355": [30000, 20],
     "Cerveza Six Costeña": [17000, 20],
-    "Cerveza Six Costeñita": [17000, 20],
+    "Cerveza Six Costeñita": [18000, 20],
     "Cerveza Six 330 Aguila": [23000, 20],
     "Cerveza Six Poker": [23000, 20],
     "Cerveza Sixpack Andina": [16000, 20],
-    "Cerveza Six Light Aguila": [23000, 20],
-    "Cerveza Sixpack Club Colombia": [24000, 20],
-    "Cerveza Six Budweiser": [17000, 20],
-    # --- Otros ---
+    "Cerveza Six Light Aguila": [24000, 20],
+    "Cerveza Sixpack Club Colombia": [25000, 20],
+    "Cerveza Six Budweiser": [18000, 20],
+    # --- Otros Licores / Bebidas ---
     "Four Loco Sandia": [15000, 20],
-    "Cigarrillo Mustang": [8000, 20],
+    "Four Loco Purple": [15000, 20],
+    "Four Loco Blue": [15000, 20],
+    "Four Loco Gold": [15000, 20],
+    # --- Cigarrillos ---
+    "Cigarrillo Mustang": [8500, 20],
     "Cigarrillo Marlboro Rojo": [9000, 20],
+    "Cigarrillo Boston": [8000, 20],
+    "Cigarrillo Marlboro Sandia": [9000, 20],
+    "Cigarrillo Marlboro Fusion": [9000, 20],
+    "Cigarrillo Lucky Verde": [9000, 20],
+    "Cigarrillo Lucky Alaska": [9000, 20],
+    "Cigarrillo Green": [8000, 20],
+    # --- Whiskys ---
     "Whisky Jack Daniels": [147000, 20],
+    "Whisky Jack Daniels Honey": [147000, 20],
+    "Whisky Chivas": [155000, 20],
+    "Whisky Buchannas Botella": [183000, 20],
+    "Whisky Buchannas Media": [104000, 20],
+    "Whisky Grans": [73000, 20],
+    "Whisky Old Parr Botella": [164000, 20],
+    "Whisky Haig Club": [116000, 20],
+    "Whisky Black White Botella": [60000, 20],
+    "Whisky Black White Media": [33000, 20],
+    "Whisky Something Botella": [76000, 20],
+    "Whisky Sello Rojo Litro": [104000, 20],
+    "Whisky Sello Rojo Botella": [80000, 20],
+    "Whisky Sello Rojo Media": [51000, 20],
+    # --- Cremas ---
+    "Crema de Whisky Black Jack": [58000, 20],
+    "Crema de Whisky Baileys Litro": [116000, 20],
+    "Crema de Whisky Baileys Botella": [85000, 20],
+    "Crema de Whisky Baileys Media": [53000, 20],
+    # --- Tequilas / Ginebra / Vodka ---
+    "Tequila Jose Cuervo Botella": [96000, 20],
+    "Tequila Jose Cuervo Media": [60000, 20],
+    "Tequila Jimador Botella": [130000, 20],
+    "Tequila Jimador Media": [76000, 20],
+    "Ginebra Tanqueray": [135000, 20],
+    "Ginebra Bombay": [120000, 20],
+    "Vodka Absolut Litro": [120000, 20],
+    "Vodka Absolut Botella": [92000, 20],
+    "Vodka Absolut Media": [58000, 20],
+    "Smirnoff Ice Lata": [9500, 20],
+    "Smirnoff Manzana Lata": [9500, 20],
+    "Smirnoff Lulo Botella": [52000, 20],
+    "Smirnoff Lulo Media": [29000, 20],
+    "Jagermaister Hiervas": [130000, 20],
+    # --- Vinos ---
+    "Vino Gato Tinto Tetrapack": [27000, 20],
+    "Vino Gato Negro Merlot": [47000, 20],
+    "Vino Gato Negro Sauvignon": [47000, 20],
+    "Vino Gato Negro Malbec": [47000, 20],
+    "Vino Casillero del Diablo": [75000, 20],
+    "Vino Finca Las Moras Sauvignon": [58000, 20],
+    "Vino Finca Las Moras Malbec": [58000, 20],
+    "Vino Duvoned": [73000, 20],
+    "Vino Espumoso JP Chanet Blanco": [70000, 20],
+    "Vino Espumoso JP Chanet Rosado": [70000, 20],
+    "Vino Espumoso JP Chanet Morado": [70000, 20],
+    "Vino Espumoso JP Chanet Syrah": [65000, 20],
+    "Vino Espumoso JP Chanet Brut": [65000, 20],
+    "Vino Espumoso JP Chanet Chardonnay": [65000, 20],
+    # --- Bebidas sin Alcohol / Energizantes ---
     "Gatorade": [5000, 20],
+    "Agua con Gas": [2500, 20],
+    "Agua sin Gas": [2000, 20],
+    "Redbull": [7000, 20],
     "Coca Cola 1.5L": [7500, 20],
+    "Gaseosa Ginger 1.5L": [7500, 20],
+    "Gaseosa Soda Bretaña 1.5L": [7500, 20],
+    "Jugo Naranja Del Valle": [7000, 20],
+    "Electrolit Naran/Mandarina": [9500, 20],
+    "Electrolit Maracuya": [9500, 20],
+    # --- Snacks / Varios ---
+    "Detodito Natural 165gr": [9500, 20],
+    "Detodito BBQ 165gr": [9500, 20],
+    "Detodito Mix 165gr": [9500, 20],
+    "Chicles Trident": [2000, 20],
+    "Encendedor": [1000, 20],
+    "Bonfiest": [4000, 20],
+    "Preservativos": [3000, 20],
+    "Sildenafil Viagra": [7000, 20],
+    "Salchichas": [7000, 20],
+    "Bombombunes": [600, 20],
     "Hielo": [2000, 20]
 }
 
 # ---------------------------------------------------------
 # 3. FUNCIONES
 # ---------------------------------------------------------
-
 def cargar_productos():
     if not os.path.exists(ARCHIVO_DB):
-        # Si no existe, creamos la DB con los productos iniciales
         data_list = [{"Producto": p, "Precio": v[0], "Stock": v[1]} for p, v in PRODUCTOS_INICIALES_DICT.items()]
         df = pd.DataFrame(data_list)
         df.to_csv(ARCHIVO_DB, index=False)
@@ -80,7 +154,6 @@ def cargar_productos():
         try:
             return pd.read_csv(ARCHIVO_DB)
         except:
-            # Si falla, recreamos estructura vacía o base
             return pd.DataFrame(columns=["Producto","Precio","Stock"])
 
 def guardar_productos(df):
@@ -96,45 +169,36 @@ def actualizar_factura_siguiente(nuevo_numero):
     with open(ARCHIVO_CONSECUTIVO, "w") as f: f.write(str(nuevo_numero))
 
 def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
-    """Calcula tarifa y devuelve dirección formateada"""
-    geolocator = Nominatim(user_agent="fenix_app_v3")
+    geolocator = Nominatim(user_agent="fenix_app_v4")
     coords_destino = None
     direccion_detectada = direccion_texto
 
     try:
-        # CASO A: Coordenadas GPS
         if coordenadas_gps:
             coords_destino = coordenadas_gps
-            # Reverse Geocoding para hallar el nombre de la calle
             try:
                 location = geolocator.reverse(f"{coords_destino[0]}, {coords_destino[1]}", timeout=5)
                 if location:
-                    # Intentar limpiar la dirección
                     direccion_detectada = location.address.split(",")[0]
             except:
-                direccion_detectada = "Ubicación GPS Exacta"
+                direccion_detectada = "Ubicación GPS"
 
-        # CASO B: Texto manual
         elif direccion_texto and len(direccion_texto) > 3:
             busqueda = f"{direccion_texto}, Ibagué, Tolima, Colombia"
             location = geolocator.geocode(busqueda, timeout=5)
             if location:
                 coords_destino = (location.latitude, location.longitude)
         
-        # CÁLCULO
         if coords_destino:
             distancia_km = geodesic(UBICACION_BASE, coords_destino).kilometers
-            
-            # --- TARIFA: Base 4000 + 1500 x Km ---
+            # Tarifa: 4000 base + 1500 x km
             tarifa = 4000 + (distancia_km * 1500)
             tarifa = round(tarifa / 100) * 100
             if tarifa < 5000: tarifa = 5000
-            
             return int(tarifa), round(distancia_km, 2), direccion_detectada
         else:
             return None, 0, direccion_texto
-
-    except Exception as e:
+    except:
         return None, 0, direccion_texto
 
 def enviar_a_sheets(data):
@@ -151,73 +215,90 @@ PRODUCTOS_DISPONIBLES = dict(zip(df_productos["Producto"], df_productos["Precio"
 # ---------------------------------------------------------
 # 4. INTERFAZ
 # ---------------------------------------------------------
+
+# --- SIDEBAR DE ADMIN ---
+with st.sidebar:
+    st.header("⚙️ Admin")
+    if st.checkbox("Opciones Avanzadas"):
+        pwd = st.text_input("Contraseña", type="password")
+        if pwd == PASSWORD_ADMIN:
+            st.success("Admin Autorizado")
+            if st.button("🔄 Restaurar Precios de Fábrica"):
+                data_list = [{"Producto": p, "Precio": v[0], "Stock": v[1]} for p, v in PRODUCTOS_INICIALES_DICT.items()]
+                df_new = pd.DataFrame(data_list)
+                guardar_productos(df_new)
+                st.success("¡Precios Actualizados! Recargando...")
+                time.sleep(1)
+                st.rerun()
+
 st.title("🔥 Fenix Pedidos")
 numero_factura_actual = obtener_siguiente_factura()
 
-# --- VARIABLES DE ESTADO (MEMORIA) ---
+# Estados de sesión
 if 'direccion_final' not in st.session_state: st.session_state['direccion_final'] = ""
 if 'link_ubicacion' not in st.session_state: st.session_state['link_ubicacion'] = ""
 if 'valor_domi_calculado' not in st.session_state: st.session_state['valor_domi_calculado'] = 7000
+if 'gps_temporal' not in st.session_state: st.session_state['gps_temporal'] = None
 
-# --- FORMULARIO DATOS ---
+# --- DATOS CLIENTE (FORMULARIO) ---
 with st.expander("👤 Datos del Cliente", expanded=True):
     c_f, c_t = st.columns(2)
     with c_f: st.text_input("Factura #", value=str(numero_factura_actual), disabled=True)
-    with c_t: celular = st.text_input("Celular")
     
-    # --- SECCIÓN GPS ---
-    st.write("📍 **Dirección y Ubicación:**")
-    col_btn_gps, col_input_dir = st.columns([1, 4])
+    # IMPORTANTE: Usamos key para poder borrarlos luego
+    with c_t: celular = st.text_input("Celular", key="input_celular") 
     
-    gps_data = None
-    with col_btn_gps:
-        # Botón que pide permiso al celular
+    st.markdown("---")
+    st.write("📍 **Ubicación GPS:**")
+    
+    col_detect, col_status = st.columns([1, 2])
+    with col_detect:
         gps_data = get_geolocation(component_key='get_gps')
+    
+    with col_status:
+        if gps_data:
+            lat = gps_data['coords']['latitude']
+            lon = gps_data['coords']['longitude']
+            st.session_state['gps_temporal'] = (lat, lon)
+            st.success(f"✅ Señal: {lat:.4f}, {lon:.4f}")
+        else:
+            st.info("Presiona 'Find my location' 📡")
 
-    # Lógica cuando llega el GPS
-    if gps_data:
-        lat = gps_data['coords']['latitude']
-        lon = gps_data['coords']['longitude']
-        coords = (lat, lon)
-        
-        # Si las coordenadas cambiaron, recalculamos
-        if 'last_gps' not in st.session_state or st.session_state['last_gps'] != coords:
-            st.session_state['last_gps'] = coords
-            
-            # 1. Crear Link de Google Maps
-            link_maps = f"http://googleusercontent.com/maps.google.com/?q={lat},{lon}"
+    if st.session_state['gps_temporal']:
+        if st.button("⬇️ USAR ESTA UBICACIÓN", use_container_width=True, type="primary"):
+            coords = st.session_state['gps_temporal']
+            link_maps = f"http://googleusercontent.com/maps.google.com/?q={coords[0]},{coords[1]}"
             st.session_state['link_ubicacion'] = link_maps
             
-            # 2. Calcular Precio y buscar nombre de calle
-            with st.spinner("📍 Obteniendo ubicación..."):
+            with st.spinner("Calculando..."):
                 t, d, dir_txt = calcular_tarifa_domicilio(coordenadas_gps=coords)
                 if t:
                     st.session_state['valor_domi_calculado'] = t
                     st.session_state['direccion_final'] = dir_txt
-                    st.toast("Ubicación exacta cargada", icon="✅")
+                    st.toast("Datos actualizados", icon="📝")
+                st.session_state['gps_temporal'] = None
+                st.rerun()
 
-    with col_input_dir:
-        # Input Dirección (se llena solo o manual)
-        direccion = st.text_input("Dirección", value=st.session_state['direccion_final'], key="input_dir_user")
-        if direccion != st.session_state['direccion_final']:
-            st.session_state['direccion_final'] = direccion
+    col_in_dir, col_in_link = st.columns(2)
+    with col_in_dir:
+        dir_val = st.text_input("Dirección (Calle)", value=st.session_state['direccion_final'])
+        if dir_val != st.session_state['direccion_final']: st.session_state['direccion_final'] = dir_val
 
-    # --- CAMPOS RESTANTES ---
-    # Input Ubicación (se llena con el LINK automáticamente)
-    ubicacion = st.text_input("Ubicación (Link GPS)", value=st.session_state['link_ubicacion'], placeholder="El link aparecerá aquí automáticamente")
-    
-    # Permitir edición manual del link si el usuario quiere
-    if ubicacion != st.session_state['link_ubicacion']:
-        st.session_state['link_ubicacion'] = ubicacion
+    with col_in_link:
+        link_val = st.text_input("Link Maps", value=st.session_state['link_ubicacion'])
+        if link_val != st.session_state['link_ubicacion']: st.session_state['link_ubicacion'] = link_val
 
+    st.markdown("---")
     domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
-    barrio = st.text_input("Barrio")
-    observaciones = st.text_area("Notas")
+    
+    # IMPORTANTE: Usamos key para poder borrarlos luego
+    barrio = st.text_input("Barrio", key="input_barrio")
+    observaciones = st.text_area("Notas", key="input_notas")
 
 st.divider()
 
 # ---------------------------------------------------------
-# 5. CARRITO DE COMPRAS
+# 5. CARRITO
 # ---------------------------------------------------------
 st.subheader("🛒 Carrito")
 
@@ -225,7 +306,6 @@ if "carrito" not in st.session_state:
     st.session_state.carrito = pd.DataFrame(columns=["Producto","Precio","Cantidad","Total"])
     st.session_state.carrito = st.session_state.carrito.astype({"Producto":"str","Precio":"int","Cantidad":"int","Total":"int"})
 
-# Buscador
 lista_ordenada = sorted(list(PRODUCTOS_DISPONIBLES.keys()))
 opc = ["Seleccionar..."] + lista_ordenada
 def fmt(x):
@@ -253,7 +333,6 @@ with c_add:
         st.session_state.carrito = df
         st.rerun()
 
-# Mostrar Carrito
 if not st.session_state.carrito.empty:
     idx_borrar = None
     for i, row in st.session_state.carrito.iterrows():
@@ -284,7 +363,6 @@ st.subheader("🛵 Envío y Totales")
 c_geo1, c_geo2 = st.columns([2, 1])
 with c_geo2:
     st.write("")
-    # Botón de recalculo manual
     if st.button("📍 Recalcular Manual", use_container_width=True):
         if st.session_state['direccion_final']:
              t, d, _ = calcular_tarifa_domicilio(direccion_texto=st.session_state['direccion_final'])
@@ -296,7 +374,6 @@ with c_geo1:
     valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=500)
 
 medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"])
-
 total_final = suma_productos + int(valor_domicilio)
 
 st.markdown(f"""
@@ -338,10 +415,11 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             res = enviar_a_sheets(data_json)
         
         if hasattr(res, 'status_code') and res.status_code == 200:
-            st.balloons()
-            st.success("Enviado con éxito")
+            st.balloons()                       # 1. MOSTRAR FIESTA
+            st.success("✅ Pedido Enviado!")    # 2. MOSTRAR MENSAJE
+            time.sleep(2.5)                     # 3. ESPERAR 2.5 SEGUNDOS PARA QUE SE VEA
             
-            # Descargar Stock
+            # Stock update
             for item in prods:
                 pn = item["Producto"]
                 cant = int(item["Cantidad"])
@@ -352,14 +430,22 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             guardar_productos(df_productos)
             actualizar_factura_siguiente(numero_factura_actual + 1)
             
-            # Reset
+            # RESET TOTAL DEL FORMULARIO
             st.session_state.carrito = pd.DataFrame(columns=["Producto","Precio","Cantidad","Total"])
             st.session_state['direccion_final'] = ""
             st.session_state['link_ubicacion'] = ""
             st.session_state['valor_domi_calculado'] = 7000
-            st.rerun()
+            st.session_state['gps_temporal'] = None
+            
+            # Limpiamos los campos del cliente usando sus KEYS
+            st.session_state['input_celular'] = "" 
+            st.session_state['input_barrio'] = ""
+            st.session_state['input_notas'] = ""
+            
+            st.rerun() # 4. RECARGAR AHORA SÍ
         else:
             st.error("Error al enviar")
+
 
 
 
