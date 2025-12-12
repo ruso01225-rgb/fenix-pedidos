@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
-import time  # <--- Necesario para la pausa de las bombitas
+import time  # Para la pausa de los globos
+import urllib.parse # <--- Para crear el link de WhatsApp
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
@@ -15,8 +16,13 @@ st.set_page_config(page_title="Ibaguiar Venta de Licor", page_icon="🔥", layou
 # =========================================================
 # ⚙️ VARIABLES
 # =========================================================
-UBICACION_BASE = (4.4440508, -75.208976)
+# Coordenadas de la bodega/punto de venta en Ibagué
+UBICACION_BASE = (4.4440508, -75.208976) 
+
+# ⚠️ TU URL DE GOOGLE APPS SCRIPT
 URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz1oGSzV-WZ7MIN5YbdJUsBrZRUv9l80Jl1kqAbheNDlw/exec"
+
+# ARCHIVOS LOCALES
 ARCHIVO_DB = "productos_db.csv"
 ARCHIVO_CONSECUTIVO = "consecutivo.txt"
 PASSWORD_ADMIN = "1234"
@@ -74,6 +80,7 @@ PRODUCTOS_INICIALES_DICT = {
     "Whisky Buchannas Media": [104000, 20],
     "Whisky Grans": [73000, 20],
     "Whisky Old Parr Botella": [164000, 20],
+    "Whisky Old Parr Media": [116000, 20],
     "Whisky Haig Club": [116000, 20],
     "Whisky Black White Botella": [60000, 20],
     "Whisky Black White Media": [33000, 20],
@@ -169,6 +176,7 @@ def actualizar_factura_siguiente(nuevo_numero):
     with open(ARCHIVO_CONSECUTIVO, "w") as f: f.write(str(nuevo_numero))
 
 def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
+    """Calcula tarifa base 4000 + 1500/km desde ubicación base"""
     geolocator = Nominatim(user_agent="fenix_app_v4")
     coords_destino = None
     direccion_detectada = direccion_texto
@@ -177,6 +185,7 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
         if coordenadas_gps:
             coords_destino = coordenadas_gps
             try:
+                # Intentar obtener nombre de la calle
                 location = geolocator.reverse(f"{coords_destino[0]}, {coords_destino[1]}", timeout=5)
                 if location:
                     direccion_detectada = location.address.split(",")[0]
@@ -184,6 +193,7 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
                 direccion_detectada = "Ubicación GPS"
 
         elif direccion_texto and len(direccion_texto) > 3:
+            # Buscar por texto en Ibagué
             busqueda = f"{direccion_texto}, Ibagué, Tolima, Colombia"
             location = geolocator.geocode(busqueda, timeout=5)
             if location:
@@ -191,9 +201,11 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
         
         if coords_destino:
             distancia_km = geodesic(UBICACION_BASE, coords_destino).kilometers
-            # Tarifa: 4000 base + 1500 x km
+            # Fórmula de tarifa
             tarifa = 4000 + (distancia_km * 1500)
+            # Redondear a la centena más cercana
             tarifa = round(tarifa / 100) * 100
+            # Mínimo 5000
             if tarifa < 5000: tarifa = 5000
             return int(tarifa), round(distancia_km, 2), direccion_detectada
         else:
@@ -231,10 +243,18 @@ with st.sidebar:
                 time.sleep(1)
                 st.rerun()
 
-st.title("🔥 Venta de Licores Ibague")
+st.markdown("""
+<div style="text-align:center; line-height:1.1;">
+  <h1>🔥 Venta de Licores Ibagué</h1>
+  <h3 style="margin-top:-10px; color:#666;">
+    Domicilios Nocturnos
+  </h3>
+</div>
+""", unsafe_allow_html=True)
+
 numero_factura_actual = obtener_siguiente_factura()
 
-# Estados de sesión
+# Estados de sesión para persistencia
 if 'direccion_final' not in st.session_state: st.session_state['direccion_final'] = ""
 if 'link_ubicacion' not in st.session_state: st.session_state['link_ubicacion'] = ""
 if 'valor_domi_calculado' not in st.session_state: st.session_state['valor_domi_calculado'] = 7000
@@ -244,13 +264,12 @@ if 'gps_temporal' not in st.session_state: st.session_state['gps_temporal'] = No
 with st.expander("👤 Datos del Cliente", expanded=True):
     c_f, c_t = st.columns(2)
     with c_f: st.text_input("Factura #", value=str(numero_factura_actual), disabled=True)
-    
-    # IMPORTANTE: Usamos key para poder borrarlos luego
     with c_t: celular = st.text_input("Celular", key="input_celular") 
     
     st.markdown("---")
     st.write("📍 **Ubicación GPS:**")
     
+    # Componente de Geolocalización JS
     col_detect, col_status = st.columns([1, 2])
     with col_detect:
         gps_data = get_geolocation(component_key='get_gps')
@@ -270,12 +289,14 @@ with st.expander("👤 Datos del Cliente", expanded=True):
             link_maps = f"http://googleusercontent.com/maps.google.com/?q={coords[0]},{coords[1]}"
             st.session_state['link_ubicacion'] = link_maps
             
-            with st.spinner("Calculando..."):
+            with st.spinner("Calculando tarifa..."):
                 t, d, dir_txt = calcular_tarifa_domicilio(coordenadas_gps=coords)
                 if t:
                     st.session_state['valor_domi_calculado'] = t
-                    st.session_state['direccion_final'] = dir_txt
-                    st.toast("Datos actualizados", icon="📝")
+                    # Solo sobrescribir dirección si detectó una calle real
+                    if dir_txt != "Ubicación GPS":
+                        st.session_state['direccion_final'] = dir_txt
+                    st.toast(f"Tarifa actualizada: ${t}", icon="💵")
                 st.session_state['gps_temporal'] = None
                 st.rerun()
 
@@ -289,9 +310,8 @@ with st.expander("👤 Datos del Cliente", expanded=True):
         if link_val != st.session_state['link_ubicacion']: st.session_state['link_ubicacion'] = link_val
 
     st.markdown("---")
-    domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
+    domiciliario = st.selectbox("Domiciliario", [" Domicilio", "Juan", "Pedro", "Empresa"])
     
-    # IMPORTANTE: Usamos key para poder borrarlos luego
     barrio = st.text_input("Barrio", key="input_barrio")
     observaciones = st.text_area("Notas", key="input_notas")
 
@@ -363,17 +383,18 @@ st.subheader("🛵 Envío y Totales")
 c_geo1, c_geo2 = st.columns([2, 1])
 with c_geo2:
     st.write("")
-    if st.button("📍 Recalcular Manual", use_container_width=True):
+    if st.button("📍 Recalcular", use_container_width=True, help="Recalcula tarifa basado en la dirección escrita"):
         if st.session_state['direccion_final']:
              t, d, _ = calcular_tarifa_domicilio(direccion_texto=st.session_state['direccion_final'])
              if t:
                  st.session_state['valor_domi_calculado'] = t
                  st.toast(f"Distancia aprox: {d}km")
+                 st.rerun()
 
 with c_geo1:
-    valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=500)
+    valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=1000)
 
-medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"])
+medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"], key="medio_pago_input")
 total_final = suma_productos + int(valor_domicilio)
 
 st.markdown(f"""
@@ -386,65 +407,109 @@ total_datafono = ""
 if medio_pago == "Datafono":
     v_dat = int(total_final * 1.06)
     st.warning(f"Con Datafono (+6%): ${v_dat:,.0f}")
-    total_datafono = st.number_input("Cobrar:", value=v_dat)
+    total_datafono = st.number_input("Cobrar:", value=v_dat, key="datafono_valor")
 
-if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
-    if clean_df.empty:
-        st.error("Carrito vacío")
-    else:
-        prods = []
-        for _, row in clean_df.iterrows():
-            prods.append({"Producto": str(row["Producto"]), "Cantidad": str(row["Cantidad"]), "Total": str(row["Total"])})
+# ---------------------------------------------------------
+# 7. LÓGICA DE ENVÍO Y CONFIRMACIÓN
+# ---------------------------------------------------------
+# Inicializar estado de éxito si no existe
+if 'order_success' not in st.session_state:
+    st.session_state['order_success'] = False
+
+if st.session_state['order_success']:
+    # --- PANTALLA DE ÉXITO (WHATSAPP + NUEVO PEDIDO) ---
+    st.balloons()
+    st.success("✅ ¡Pedido enviado correctamente!")
+    
+    # 📲 WHATSAPP
+    mensaje_wa = "Acabe de realizar un pedido a la nube"
+    mensaje_cod = urllib.parse.quote(mensaje_wa)
+    wa_link = f"https://wa.me/573186161854?text={mensaje_cod}"
+
+    st.markdown(
+        f"""
+        <a href="{wa_link}" target="_blank"
+        style="
+        display:block;
+        text-align:center;
+        padding:14px;
+        background:#25D366;
+        color:white;
+        font-size:18px;
+        font-weight:700;
+        border-radius:10px;
+        text-decoration:none;
+        margin-top:15px;
+        margin-bottom:15px;">
+        📲 Enviar mensaje por WhatsApp
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+    if st.button("✅ NUEVO PEDIDO", use_container_width=True):
+        # RESET TOTAL
+        st.session_state.carrito = pd.DataFrame(columns=["Producto","Precio","Cantidad","Total"])
+        st.session_state['direccion_final'] = ""
+        st.session_state['link_ubicacion'] = ""
+        st.session_state['valor_domi_calculado'] = 7000
+        st.session_state['gps_temporal'] = None
         
-        data_json = {
-            "MedioPago": medio_pago,
-            "ValorTotalV": str(total_final),
-            "ValorDomi": str(valor_domicilio),
-            "TotalData": str(total_datafono),
-            "Factura": str(numero_factura_actual),
-            "Domiciliario": domiciliario,
-            "Celular": celular,
-            "Barrio": barrio,
-            "Direccion": st.session_state['direccion_final'],
-            "Ubicacion": st.session_state['link_ubicacion'],
-            "Observaciones": observaciones,
-            "Productos": prods
-        }
+        # Borrar campos específicos
+        keys_to_clear = ['input_celular', 'input_barrio', 'input_notas', 'medio_pago_input', 'datafono_valor']
+        for key in keys_to_clear:
+            if key in st.session_state: del st.session_state[key]
         
-        with st.spinner("Enviando..."):
-            res = enviar_a_sheets(data_json)
-        
-        if hasattr(res, 'status_code') and res.status_code == 200:
-            st.balloons()                       # 1. MOSTRAR FIESTA
-            st.success("✅ Pedido Enviado!")    # 2. MOSTRAR MENSAJE
-            time.sleep(2.5)                     # 3. ESPERAR 2.5 SEGUNDOS PARA QUE SE VEA
-            
-            # Stock update
-            for item in prods:
-                pn = item["Producto"]
-                cant = int(item["Cantidad"])
-                if pn in df_productos["Producto"].values:
-                    idx = df_productos.index[df_productos["Producto"] == pn][0]
-                    curr = int(df_productos.at[idx, "Stock"])
-                    df_productos.at[idx, "Stock"] = max(0, curr - cant)
-            guardar_productos(df_productos)
-            actualizar_factura_siguiente(numero_factura_actual + 1)
-            
-            # RESET TOTAL DEL FORMULARIO
-            st.session_state.carrito = pd.DataFrame(columns=["Producto","Precio","Cantidad","Total"])
-            st.session_state['direccion_final'] = ""
-            st.session_state['link_ubicacion'] = ""
-            st.session_state['valor_domi_calculado'] = 7000
-            st.session_state['gps_temporal'] = None
-            
-            # Limpiamos los campos del cliente usando sus KEYS
-            st.session_state['input_celular'] = "" 
-            st.session_state['input_barrio'] = ""
-            st.session_state['input_notas'] = ""
-            
-            st.rerun() # 4. RECARGAR AHORA SÍ
+        st.session_state['order_success'] = False # Reset flag
+        st.rerun()
+
+else:
+    # --- BOTÓN DE ENVIAR ---
+    if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
+        if clean_df.empty:
+            st.error("Carrito vacío")
         else:
-            st.error("Error al enviar")
+            prods = []
+            for _, row in clean_df.iterrows():
+                prods.append({"Producto": str(row["Producto"]), "Cantidad": str(row["Cantidad"]), "Total": str(row["Total"])})
+            
+            data_json = {
+                "MedioPago": medio_pago,
+                "ValorTotalV": str(total_final),
+                "ValorDomi": str(valor_domicilio),
+                "TotalData": str(total_datafono),
+                "Factura": str(numero_factura_actual),
+                "Domiciliario": domiciliario,
+                "Celular": celular,
+                "Barrio": barrio,
+                "Direccion": st.session_state['direccion_final'],
+                "Ubicacion": st.session_state['link_ubicacion'],
+                "Observaciones": observaciones,
+                "Productos": prods
+            }
+            
+            with st.spinner("Enviando..."):
+                res = enviar_a_sheets(data_json)
+            
+            if hasattr(res, 'status_code') and res.status_code == 200:
+                # 1. Actualizar Stock
+                for item in prods:
+                    pn = item["Producto"]
+                    cant = int(item["Cantidad"])
+                    if pn in df_productos["Producto"].values:
+                        idx = df_productos.index[df_productos["Producto"] == pn][0]
+                        curr = int(df_productos.at[idx, "Stock"])
+                        df_productos.at[idx, "Stock"] = max(0, curr - cant)
+                guardar_productos(df_productos)
+                
+                # 2. Actualizar Consecutivo
+                actualizar_factura_siguiente(numero_factura_actual + 1)
+                
+                # 3. Activar pantalla de éxito y recargar
+                st.session_state['order_success'] = True
+                st.rerun()
+            else:
+                st.error("Error al enviar")
 
 
 
