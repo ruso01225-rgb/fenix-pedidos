@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
-import time  # Para la pausa de los globos
+import time  # <--- Necesario para la pausa de las bombitas
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
@@ -15,13 +15,8 @@ st.set_page_config(page_title="Ibaguiar Venta de Licor", page_icon="🔥", layou
 # =========================================================
 # ⚙️ VARIABLES
 # =========================================================
-# Coordenadas de la bodega/punto de venta en Ibagué
-UBICACION_BASE = (4.4440508, -75.208976) 
-
-# ⚠️ TU URL DE GOOGLE APPS SCRIPT
+UBICACION_BASE = (4.4440508, -75.208976)
 URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz1oGSzV-WZ7MIN5YbdJUsBrZRUv9l80Jl1kqAbheNDlw/exec"
-
-# ARCHIVOS LOCALES
 ARCHIVO_DB = "productos_db.csv"
 ARCHIVO_CONSECUTIVO = "consecutivo.txt"
 PASSWORD_ADMIN = "1234"
@@ -79,7 +74,6 @@ PRODUCTOS_INICIALES_DICT = {
     "Whisky Buchannas Media": [104000, 20],
     "Whisky Grans": [73000, 20],
     "Whisky Old Parr Botella": [164000, 20],
-    "Whisky Old Parr Media": [116000, 20],
     "Whisky Haig Club": [116000, 20],
     "Whisky Black White Botella": [60000, 20],
     "Whisky Black White Media": [33000, 20],
@@ -175,7 +169,6 @@ def actualizar_factura_siguiente(nuevo_numero):
     with open(ARCHIVO_CONSECUTIVO, "w") as f: f.write(str(nuevo_numero))
 
 def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
-    """Calcula tarifa base 4000 + 1500/km desde ubicación base"""
     geolocator = Nominatim(user_agent="fenix_app_v4")
     coords_destino = None
     direccion_detectada = direccion_texto
@@ -184,7 +177,6 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
         if coordenadas_gps:
             coords_destino = coordenadas_gps
             try:
-                # Intentar obtener nombre de la calle
                 location = geolocator.reverse(f"{coords_destino[0]}, {coords_destino[1]}", timeout=5)
                 if location:
                     direccion_detectada = location.address.split(",")[0]
@@ -192,7 +184,6 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
                 direccion_detectada = "Ubicación GPS"
 
         elif direccion_texto and len(direccion_texto) > 3:
-            # Buscar por texto en Ibagué
             busqueda = f"{direccion_texto}, Ibagué, Tolima, Colombia"
             location = geolocator.geocode(busqueda, timeout=5)
             if location:
@@ -200,11 +191,9 @@ def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
         
         if coords_destino:
             distancia_km = geodesic(UBICACION_BASE, coords_destino).kilometers
-            # Fórmula de tarifa
+            # Tarifa: 4000 base + 1500 x km
             tarifa = 4000 + (distancia_km * 1500)
-            # Redondear a la centena más cercana
             tarifa = round(tarifa / 100) * 100
-            # Mínimo 5000
             if tarifa < 5000: tarifa = 5000
             return int(tarifa), round(distancia_km, 2), direccion_detectada
         else:
@@ -245,7 +234,7 @@ with st.sidebar:
 st.title("🔥 Venta de Licores Ibague")
 numero_factura_actual = obtener_siguiente_factura()
 
-# Estados de sesión para persistencia
+# Estados de sesión
 if 'direccion_final' not in st.session_state: st.session_state['direccion_final'] = ""
 if 'link_ubicacion' not in st.session_state: st.session_state['link_ubicacion'] = ""
 if 'valor_domi_calculado' not in st.session_state: st.session_state['valor_domi_calculado'] = 7000
@@ -255,12 +244,13 @@ if 'gps_temporal' not in st.session_state: st.session_state['gps_temporal'] = No
 with st.expander("👤 Datos del Cliente", expanded=True):
     c_f, c_t = st.columns(2)
     with c_f: st.text_input("Factura #", value=str(numero_factura_actual), disabled=True)
+    
+    # IMPORTANTE: Usamos key para poder borrarlos luego
     with c_t: celular = st.text_input("Celular", key="input_celular") 
     
     st.markdown("---")
     st.write("📍 **Ubicación GPS:**")
     
-    # Componente de Geolocalización JS
     col_detect, col_status = st.columns([1, 2])
     with col_detect:
         gps_data = get_geolocation(component_key='get_gps')
@@ -280,14 +270,12 @@ with st.expander("👤 Datos del Cliente", expanded=True):
             link_maps = f"http://googleusercontent.com/maps.google.com/?q={coords[0]},{coords[1]}"
             st.session_state['link_ubicacion'] = link_maps
             
-            with st.spinner("Calculando tarifa..."):
+            with st.spinner("Calculando..."):
                 t, d, dir_txt = calcular_tarifa_domicilio(coordenadas_gps=coords)
                 if t:
                     st.session_state['valor_domi_calculado'] = t
-                    # Solo sobrescribir dirección si detectó una calle real
-                    if dir_txt != "Ubicación GPS":
-                        st.session_state['direccion_final'] = dir_txt
-                    st.toast(f"Tarifa actualizada: ${t}", icon="💵")
+                    st.session_state['direccion_final'] = dir_txt
+                    st.toast("Datos actualizados", icon="📝")
                 st.session_state['gps_temporal'] = None
                 st.rerun()
 
@@ -303,6 +291,7 @@ with st.expander("👤 Datos del Cliente", expanded=True):
     st.markdown("---")
     domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
     
+    # IMPORTANTE: Usamos key para poder borrarlos luego
     barrio = st.text_input("Barrio", key="input_barrio")
     observaciones = st.text_area("Notas", key="input_notas")
 
@@ -374,18 +363,17 @@ st.subheader("🛵 Envío y Totales")
 c_geo1, c_geo2 = st.columns([2, 1])
 with c_geo2:
     st.write("")
-    if st.button("📍 Recalcular", use_container_width=True, help="Recalcula tarifa basado en la dirección escrita"):
+    if st.button("📍 Recalcular Manual", use_container_width=True):
         if st.session_state['direccion_final']:
              t, d, _ = calcular_tarifa_domicilio(direccion_texto=st.session_state['direccion_final'])
              if t:
                  st.session_state['valor_domi_calculado'] = t
                  st.toast(f"Distancia aprox: {d}km")
-                 st.rerun()
 
 with c_geo1:
     valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=500)
 
-medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"], key="medio_pago_input")
+medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"])
 total_final = suma_productos + int(valor_domicilio)
 
 st.markdown(f"""
@@ -398,7 +386,7 @@ total_datafono = ""
 if medio_pago == "Datafono":
     v_dat = int(total_final * 1.06)
     st.warning(f"Con Datafono (+6%): ${v_dat:,.0f}")
-    total_datafono = st.number_input("Cobrar:", value=v_dat, key="datafono_valor")
+    total_datafono = st.number_input("Cobrar:", value=v_dat)
 
 if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
     if clean_df.empty:
@@ -427,9 +415,9 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             res = enviar_a_sheets(data_json)
         
         if hasattr(res, 'status_code') and res.status_code == 200:
-            st.balloons()                     # 1. Globos
-            st.success("✅ Pedido Enviado!")    # 2. Mensaje
-            time.sleep(2.5)                   # 3. Pausa para ver los globos
+            st.balloons()                       # 1. MOSTRAR FIESTA
+            st.success("✅ Pedido Enviado!")    # 2. MOSTRAR MENSAJE
+            time.sleep(2.5)                     # 3. ESPERAR 2.5 SEGUNDOS PARA QUE SE VEA
             
             # Stock update
             for item in prods:
@@ -449,16 +437,15 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             st.session_state['valor_domi_calculado'] = 7000
             st.session_state['gps_temporal'] = None
             
-            # Borrar campos específicos
-            if 'input_celular' in st.session_state: del st.session_state['input_celular']
-            if 'input_barrio' in st.session_state: del st.session_state['input_barrio']
-            if 'input_notas' in st.session_state: del st.session_state['input_notas']
-            if 'medio_pago_input' in st.session_state: del st.session_state['medio_pago_input']
-            if 'datafono_valor' in st.session_state: del st.session_state['datafono_valor']
+            # Limpiamos los campos del cliente usando sus KEYS
+            st.session_state['input_celular'] = "" 
+            st.session_state['input_barrio'] = ""
+            st.session_state['input_notas'] = ""
             
-            st.rerun() # 4. Recargar
+            st.rerun() # 4. RECARGAR AHORA SÍ
         else:
             st.error("Error al enviar")
+
 
 
 
