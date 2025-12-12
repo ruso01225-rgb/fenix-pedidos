@@ -231,7 +231,7 @@ with st.sidebar:
                 time.sleep(1)
                 st.rerun()
 
-st.title("🔥 Fenix Pedidos")
+st.title("🔥 Venta de Licores Ibague")
 numero_factura_actual = obtener_siguiente_factura()
 
 # Estados de sesión
@@ -445,6 +445,7 @@ if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
             st.rerun() # 4. RECARGAR AHORA SÍ
         else:
             st.error("Error al enviar")
+
 
 
 
