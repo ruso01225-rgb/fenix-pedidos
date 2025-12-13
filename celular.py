@@ -24,7 +24,6 @@ URL_SHEETS = "https://script.google.com/macros/s/AKfycbzEa9UwrBhOVaA1QR6ui5VRUTz
 
 # ARCHIVOS LOCALES
 ARCHIVO_DB = "productos_db.csv"
-ARCHIVO_CONSECUTIVO = "consecutivo.txt"
 PASSWORD_ADMIN = "1234"
 
 # ---------------------------------------------------------
@@ -166,15 +165,6 @@ def cargar_productos():
 def guardar_productos(df):
     df.to_csv(ARCHIVO_DB, index=False)
 
-def obtener_siguiente_factura():
-    if not os.path.exists(ARCHIVO_CONSECUTIVO): return 3001
-    try:
-        with open(ARCHIVO_CONSECUTIVO, "r") as f: return int(f.read().strip())
-    except: return 3001
-
-def actualizar_factura_siguiente(nuevo_numero):
-    with open(ARCHIVO_CONSECUTIVO, "w") as f: f.write(str(nuevo_numero))
-
 def calcular_tarifa_domicilio(direccion_texto=None, coordenadas_gps=None):
     """Calcula tarifa base 4000 + 1500/km desde ubicación base"""
     geolocator = Nominatim(user_agent="fenix_app_v4")
@@ -252,8 +242,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-numero_factura_actual = obtener_siguiente_factura()
-
 # Estados de sesión para persistencia
 if 'direccion_final' not in st.session_state: st.session_state['direccion_final'] = ""
 if 'link_ubicacion' not in st.session_state: st.session_state['link_ubicacion'] = ""
@@ -263,7 +251,9 @@ if 'gps_temporal' not in st.session_state: st.session_state['gps_temporal'] = No
 # --- DATOS CLIENTE (FORMULARIO) ---
 with st.expander("👤 Datos del Cliente", expanded=True):
     c_f, c_t = st.columns(2)
-    with c_f: st.text_input("Factura #", value=str(numero_factura_actual), disabled=True)
+    with c_f: 
+        # CAMPO MANUAL DE FACTURA
+        factura_manual = st.text_input("Factura # (5 dígitos)", max_chars=5, placeholder="Ej: 03001")
     with c_t: celular = st.text_input("Celular", key="input_celular") 
     
     st.markdown("---")
@@ -310,7 +300,7 @@ with st.expander("👤 Datos del Cliente", expanded=True):
         if link_val != st.session_state['link_ubicacion']: st.session_state['link_ubicacion'] = link_val
 
     st.markdown("---")
-    domiciliario = st.selectbox("Domiciliario", [" Domicilio", "Juan", "Pedro", "Empresa"])
+    domiciliario = st.selectbox("Domiciliario", ["Sin Domicilio", "Juan", "Pedro", "Empresa"])
     
     barrio = st.text_input("Barrio", key="input_barrio")
     observaciones = st.text_area("Notas", key="input_notas")
@@ -392,7 +382,7 @@ with c_geo2:
                  st.rerun()
 
 with c_geo1:
-    valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=1000)
+    valor_domicilio = st.number_input("Costo Domicilio", value=st.session_state['valor_domi_calculado'], step=500)
 
 medio_pago = st.selectbox("💳 Medio de Pago", ["Efectivo", "Nequi", "DaviPlata", "Datafono"], key="medio_pago_input")
 total_final = suma_productos + int(valor_domicilio)
@@ -422,7 +412,8 @@ if st.session_state['order_success']:
     st.success("✅ ¡Pedido enviado correctamente!")
     
     # 📲 WHATSAPP
-    mensaje_wa = "Acabe de realizar un pedido a la nube"
+    factura_msg = st.session_state.get('factura_enviada', 'S/N') # Recuperar factura guardada
+    mensaje_wa = f"Acabe de realizar un pedido a la nube. Factura: {factura_msg}"
     mensaje_cod = urllib.parse.quote(mensaje_wa)
     wa_link = f"https://wa.me/573186161854?text={mensaje_cod}"
 
@@ -456,7 +447,7 @@ if st.session_state['order_success']:
         st.session_state['gps_temporal'] = None
         
         # Borrar campos específicos
-        keys_to_clear = ['input_celular', 'input_barrio', 'input_notas', 'medio_pago_input', 'datafono_valor']
+        keys_to_clear = ['input_celular', 'input_barrio', 'input_notas', 'medio_pago_input', 'datafono_valor', 'factura_enviada']
         for key in keys_to_clear:
             if key in st.session_state: del st.session_state[key]
         
@@ -467,7 +458,9 @@ else:
     # --- BOTÓN DE ENVIAR ---
     if st.button("🚀 ENVIAR PEDIDO", type="primary", use_container_width=True):
         if clean_df.empty:
-            st.error("Carrito vacío")
+            st.error("⚠️ Carrito vacío")
+        elif not factura_manual:
+            st.error("⚠️ Falta escribir el número de FACTURA")
         else:
             prods = []
             for _, row in clean_df.iterrows():
@@ -478,7 +471,7 @@ else:
                 "ValorTotalV": str(total_final),
                 "ValorDomi": str(valor_domicilio),
                 "TotalData": str(total_datafono),
-                "Factura": str(numero_factura_actual),
+                "Factura": str(factura_manual), # USAMOS LA MANUAL
                 "Domiciliario": domiciliario,
                 "Celular": celular,
                 "Barrio": barrio,
@@ -502,9 +495,9 @@ else:
                         df_productos.at[idx, "Stock"] = max(0, curr - cant)
                 guardar_productos(df_productos)
                 
-                # 2. Actualizar Consecutivo
-                actualizar_factura_siguiente(numero_factura_actual + 1)
-                
+                # 2. Guardar Factura para el mensaje
+                st.session_state['factura_enviada'] = factura_manual
+
                 # 3. Activar pantalla de éxito y recargar
                 st.session_state['order_success'] = True
                 st.rerun()
